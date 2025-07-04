@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/mail"
 	"strings"
+	"os"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -95,6 +96,42 @@ func handleRequest(ctx context.Context, sesEvent events.SimpleEmailEvent) error 
 			log.Println("Email body is empty or could not be read.")
 		}
 	}
+
+
+	log.Printf("now finna do an openAI testTING")
+
+	assistantID := os.Getenv("ASSISTANT_TEST")
+	if assistantID == "" {
+		log.Fatal("Error: ASSISTANT_TEST environment variable not set. Please set it to your OpenAI Assistant ID.")
+	}
+
+	openAIKey, err := GetOpenAICredential()
+	if err != nil {
+		log.Fatalf("Failed to get OPEN_AI_CREDENTIAL: %v", err)
+	}
+	initialThreadID := ""
+	configOptions := 0 // Default: log errors, create new thread
+	if initialThreadID != "" {
+		configOptions |= RecallThreadID
+	}
+
+	assistant, err := NewAssistant(openAIKey, assistantID, configOptions, initialThreadID)
+	if err != nil {
+		log.Fatalf("Failed to initialize OpenAI Assistant: %v", err)
+	}
+
+	log.Printf("Assistant initialized. Using Thread ID: %s\n", assistant.GetThreadID())
+
+	// --- Send a Message and Get a Reply ---
+	userPrompt := "What is the capital of France?"
+	log.Printf("\nUser: %s\n", userPrompt)
+
+	reply, err := assistant.AddMessageToThread(userPrompt)
+	if err != nil {
+		log.Fatalf("Failed to get reply from assistant: %v", err)
+	}
+
+	log.Printf("Assistant: %s\n", reply)
 
 	return nil
 }

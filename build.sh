@@ -11,7 +11,9 @@ EXECUTABLE_NAME="bootstrap"
 
 mkdir -p "$BUILD_DIR"
 echo "Building..."
-go build -o "$BUILD_DIR/$EXECUTABLE_NAME" -ldflags="-s -w" ./src/main.go
+cd src
+go build -o "../$BUILD_DIR/$EXECUTABLE_NAME" -ldflags="-s -w" .
+cd ..
 echo "DONE! '$EXECUTABLE_NAME' zai '$BUILD_DIR/'."
 cd "$BUILD_DIR"
 zip "${EXECUTABLE_NAME}.zip" "$EXECUTABLE_NAME"

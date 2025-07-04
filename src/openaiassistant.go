@@ -1,4 +1,4 @@
-package openaiassistant
+package main
 
 import (
 	"bytes"
@@ -11,36 +11,22 @@ import (
 	"time"
 )
 
-// Constants for OpenAI API configuration and assistant IDs.
 const (
-	BaseURI = "[https://api.openai.com](https://api.openai.com)"
-	// CredentialsFile is a placeholder for a local file path.
-	// In a production Go application, it's generally recommended to use
-	// environment variables or a dedicated configuration management system
-	// for sensitive information like API keys.
-	CredentialsFile  = "credentials/example/example.json"
-	OpenAIBetaHeader = "assistants=v2"
-
-	// Config options (bit flags)
-	SilenceErrors          int = 1 << 0 // Suppress internal error logging
-	RecallThreadID         int = 1 << 1 // Attempt to recall an existing thread ID
-	ProductPickerAssistant     = "asst_3SRhPz1tWYg1gmLWy11nkAZm"
+	BaseURI string = "https://api.openai.com"
+	OpenAIBetaHeader string = "assistants=v2"
+	SilenceErrors int = 1 << 0 // Suppress internal error logging
+	RecallThreadID int = 1 << 1 // Attempt to recall an existing thread ID
 )
 
-// Assistant represents the OpenAI Assistant client.
 type Assistant struct {
 	silenceErrors bool
 	runID         string
 	openAIKey     string
 	assistantID   string
-	threadID      string // Stores the current OpenAI thread ID
+	threadID      string 
 	httpClient    *http.Client
 }
 
-// --- OpenAI API Response Structs ---
-// These structs are used to unmarshal JSON responses from the OpenAI API.
-
-// OpenAIErrorResponse represents a common error structure returned by the OpenAI API.
 type OpenAIErrorResponse struct {
 	Error struct {
 		Message string `json:"message"`
@@ -50,7 +36,6 @@ type OpenAIErrorResponse struct {
 	} `json:"error"`
 }
 
-// CreateThreadResponse represents the response when creating a new thread.
 type CreateThreadResponse struct {
 	ID        string                 `json:"id"`
 	Object    string                 `json:"object"`
@@ -58,18 +43,15 @@ type CreateThreadResponse struct {
 	Metadata  map[string]interface{} `json:"metadata"`
 }
 
-// AddMessagePayload represents the payload for adding a message to a thread.
 type AddMessagePayload struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-// RunThreadPayload represents the payload for running an assistant on a thread.
 type RunThreadPayload struct {
 	AssistantID string `json:"assistant_id"`
 }
 
-// RunThreadResponse represents the response when initiating a run on a thread.
 type RunThreadResponse struct {
 	ID          string                 `json:"id"`
 	Object      string                 `json:"object"`
@@ -80,7 +62,6 @@ type RunThreadResponse struct {
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
-// PollRunResponse represents the response when polling the status of a run.
 type PollRunResponse struct {
 	ID          string                 `json:"id"`
 	Object      string                 `json:"object"`
@@ -89,10 +70,8 @@ type PollRunResponse struct {
 	ThreadID    string                 `json:"thread_id"`
 	Status      string                 `json:"status"`
 	Metadata    map[string]interface{} `json:"metadata"`
-	// Add other fields if needed, e.g., `required_action` for tool calls.
 }
 
-// ListMessagesResponse represents the response when listing messages in a thread.
 type ListMessagesResponse struct {
 	Object  string    `json:"object"`
 	Data    []Message `json:"data"`
@@ -101,7 +80,6 @@ type ListMessagesResponse struct {
 	HasMore bool      `json:"has_more"`
 }
 
-// Message represents a single message in a thread.
 type Message struct {
 	ID        string                 `json:"id"`
 	Object    string                 `json:"object"`
@@ -112,35 +90,27 @@ type Message struct {
 	Metadata  map[string]interface{} `json:"metadata"`
 }
 
-// Content represents the content of a message, which can be text or other types.
 type Content struct {
 	Type string `json:"type"`
 	Text Text   `json:"text"`
 }
 
-// Text represents the text content within a message.
 type Text struct {
 	Value       string        `json:"value"`
-	Annotations []interface{} `json:"annotations"` // Can be more specific if needed.
+	Annotations []interface{} `json:"annotations"`
 }
 
 // NewAssistant creates a new Assistant instance.
-// openAIKey: Your OpenAI API key.
-// assistantID: The ID of the OpenAI Assistant to use.
-// configOptions: Bitmask for configuration options (e.g., SilenceErrors, RecallThreadID).
-// initialThreadID: Optional. If RecallThreadID is set, this can be provided to re-use an existing thread.
-//
-//	If empty, a new thread will be initialized.
+// If empty, a new thread will be initialized.
 func NewAssistant(openAIKey, assistantID string, configOptions int, initialThreadID string) (*Assistant, error) {
 	a := &Assistant{
 		silenceErrors: (configOptions & SilenceErrors) != 0,
 		openAIKey:     openAIKey,
 		assistantID:   assistantID,
-		httpClient:    &http.Client{Timeout: 30 * time.Second}, // Set a reasonable HTTP client timeout
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
 	}
 
 	// If RecallThreadID is set and an initialThreadID is provided, use it.
-	// This allows the calling application to manage session state for threads.
 	if (configOptions&RecallThreadID != 0) && initialThreadID != "" {
 		a.threadID = initialThreadID
 		return a, nil
@@ -162,20 +132,18 @@ func (assistant *Assistant) SetThreadID(threadID string) {
 	assistant.threadID = threadID
 }
 
-func GetOpenAICredential(identifier string) (string, error) {
+func GetOpenAICredential() (string, error) {
 	openAICredential := os.Getenv("OPEN_AI_CREDENTIAL")
 	if openAICredential == "" {
-		return "", "MY_ENVIRONMENT_VARIABLE not set"
+		return "", fmt.Errorf("OPEN_AI_CREDENTIAL environment variable not set")
 	}
 	return openAICredential, nil
 }
 
-// ResetThread creates a new OpenAI thread for the assistant, discarding the current one.
 func (a *Assistant) ResetThread() error {
 	return a.initialiseThread()
 }
 
-// SetAssistantID updates the assistant ID used by the Assistant instance.
 func (a *Assistant) SetAssistantID(assistantID string) {
 	a.assistantID = assistantID
 }
@@ -183,7 +151,7 @@ func (a *Assistant) SetAssistantID(assistantID string) {
 // initialiseThread creates a new thread with the OpenAI API and sets the Assistant's threadID.
 func (a *Assistant) initialiseThread() error {
 	url := fmt.Sprintf("%s/v1/threads", BaseURI)
-	req, err := http.NewRequest("POST", url, nil) // No body needed for creating an empty thread
+	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
 		a.logError(fmt.Sprintf("Failed to create request for thread initialization: %v", err))
 		return fmt.Errorf("failed to create request: %w", err)
@@ -284,7 +252,7 @@ func (a *Assistant) AddMessageToThread(prompt string) (string, error) {
 	}
 
 	// Poll for the assistant's reply
-	response := a.pollThreadForReply(10, 1) // Default retries and wait time
+	response := a.pollThreadForReply(3, 4) // Default retries and wait time
 	if response == "" {
 		return "", fmt.Errorf("failed to get reply from thread after polling")
 	}
@@ -365,6 +333,7 @@ func (a *Assistant) pollThreadForReply(retries int, retryWait int) string {
 		if err != nil {
 			if i == retries { // Log error only on the last retry
 				a.logError(fmt.Sprintf("Error sending request to poll run status on last retry: %v", err))
+				return ""
 			}
 			time.Sleep(time.Duration(retryWait) * time.Second)
 			continue
@@ -401,14 +370,13 @@ func (a *Assistant) pollThreadForReply(retries int, retryWait int) string {
 			a.logError(fmt.Sprintf("OpenAI run failed with status: %s, details: %s", pollResp.Status, string(bodyBytes)))
 			return ""
 		case "completed":
-			return a.GetLastMessage() // Run completed, get the last message
+			return a.GetLastMessage()
 		default:
-			// Continue polling for other statuses like "queued", "in_progress", "cancelling", etc.
 			time.Sleep(time.Duration(retryWait) * time.Second)
 		}
 	}
 	a.logError("Polling for thread reply timed out after maximum retries.")
-	return "" // Polling timed out or failed
+	return ""
 }
 
 // GetLastMessage retrieves the most recent message in the current thread.
@@ -463,8 +431,6 @@ func (a *Assistant) GetLastMessage() string {
 }
 
 // logError is a wrapper function for logging errors, respecting the silenceErrors flag.
-// In a real application, you might integrate with a more robust logging framework
-// that supports different log levels, structured logging, etc.
 func (a *Assistant) logError(message string) {
 	if !a.silenceErrors {
 		log.Printf("Assistant Error: %s", message)
