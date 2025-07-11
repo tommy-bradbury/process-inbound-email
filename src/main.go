@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
-	"net/mail"
-	"strings"
 	"os"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -41,8 +38,6 @@ func handleRequest(ctx context.Context, sesEvent events.SimpleEmailEvent) error 
 			continue
 		}
 
-		log.Printf("Attempting to fetch email from S3: Bucket=%s, Key=%s\n", bucket, key)
-
 		getObjectInput := &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
@@ -59,79 +54,50 @@ func handleRequest(ctx context.Context, sesEvent events.SimpleEmailEvent) error 
 			return fmt.Errorf("failed to read raw email from S3: %w", err)
 		}
 
-		previewLength := int(math.Min(float64(len(rawEmailBytes)), 500))
-		log.Printf("Raw email fetched from S3 (first %d chars): %s\n", previewLength, rawEmailBytes[:previewLength])
+		msg, err := ParseEmailBody(bytes.NewReader(rawEmailBytes))
 
-		msg, err := mail.ReadMessage(bytes.NewReader(rawEmailBytes))
 		if err != nil {
 			return fmt.Errorf("parse email error: %w", err)
 		}
 
-		log.Printf("Subject: %v\n", msg.Header.Get("Subject"))
-		log.Printf("From: %v\n", msg.Header.Get("From"))
-		log.Printf("To: %v\n", msg.Header.Get("To"))
+		log.Printf("Subject: %v\n", msg.Subject)
+		log.Printf("From: %v\n", msg.From)
+		log.Printf("To: %v\n", msg.To)
+		log.Printf("Message: %v\n", msg.PlainText)
 
-		bodyContent, err := io.ReadAll(msg.Body)
+		log.Printf("now finna do an openAI testTING")
+
+		assistantID := os.Getenv("ASSISTANT_PRODUCT_PICKER")
+		if assistantID == "" {
+			log.Fatal("Error: ASSISTANT_PRODUCT_PICKER environment variable not set. Please set it to your OpenAI Assistant ID.")
+		}
+
+		openAIKey, err := GetOpenAICredential()
 		if err != nil {
-			return fmt.Errorf("failed to read email body: %w", err)
+			log.Fatalf("Failed to get OPEN_AI_CREDENTIAL: %v", err)
+		}
+		initialThreadID := ""
+		configOptions := 0 // Default: log errors, create new thread
+		if initialThreadID != "" {
+			configOptions |= RecallThreadID
 		}
 
-		contentType := msg.Header.Get("Content-Type")
-		log.Printf("Content-Type: %s\n", contentType)
-
-		if len(bodyContent) > 0 {
-			lowerContentType := strings.ToLower(contentType)
-			if strings.HasPrefix(lowerContentType, "text/plain") || strings.HasPrefix(lowerContentType, "text/html") {
-				log.Printf("Body:\n%s\n", string(bodyContent))
-			} else if strings.HasPrefix(lowerContentType, "multipart/") {
-				bodyLength := float64(len(bodyContent))
-				contentPreviewLength := int(math.Min(bodyLength, 500))
-				log.Printf("Multipart Body, can't parse directly (preview):\n%s\n", string(bodyContent[:contentPreviewLength]))
-			} else {
-				bodyLength := float64(len(bodyContent))
-				contentPreviewLength := int(math.Min(bodyLength, 500))
-				log.Printf("Other Body Content (Type: %s, preview):\n%s\n", contentType, string(bodyContent[:contentPreviewLength]))
-			}
-		} else {
-			log.Println("Email body is empty or could not be read.")
+		assistant, err := NewAssistant(openAIKey, assistantID, configOptions, initialThreadID)
+		if err != nil {
+			log.Fatalf("Failed to initialize OpenAI Assistant: %v", err)
 		}
+
+		log.Printf("Assistant initialized. Using Thread ID: %s\n", assistant.GetThreadID())
+		log.Printf("\nUser: %s\n", msg.PlainText)
+
+		reply, err := assistant.AddMessageToThread(msg.PlainText)
+		if err != nil {
+			log.Fatalf("Failed to get reply from assistant: %v", err)
+		}
+
+		log.Printf("Assistant reckons the product required is: %s\n", reply)
+
 	}
-
-
-	log.Printf("now finna do an openAI testTING")
-
-	assistantID := os.Getenv("ASSISTANT_TEST")
-	if assistantID == "" {
-		log.Fatal("Error: ASSISTANT_TEST environment variable not set. Please set it to your OpenAI Assistant ID.")
-	}
-
-	openAIKey, err := GetOpenAICredential()
-	if err != nil {
-		log.Fatalf("Failed to get OPEN_AI_CREDENTIAL: %v", err)
-	}
-	initialThreadID := ""
-	configOptions := 0 // Default: log errors, create new thread
-	if initialThreadID != "" {
-		configOptions |= RecallThreadID
-	}
-
-	assistant, err := NewAssistant(openAIKey, assistantID, configOptions, initialThreadID)
-	if err != nil {
-		log.Fatalf("Failed to initialize OpenAI Assistant: %v", err)
-	}
-
-	log.Printf("Assistant initialized. Using Thread ID: %s\n", assistant.GetThreadID())
-
-	// --- Send a Message and Get a Reply ---
-	userPrompt := "What is the capital of France?"
-	log.Printf("\nUser: %s\n", userPrompt)
-
-	reply, err := assistant.AddMessageToThread(userPrompt)
-	if err != nil {
-		log.Fatalf("Failed to get reply from assistant: %v", err)
-	}
-
-	log.Printf("Assistant: %s\n", reply)
 
 	return nil
 }

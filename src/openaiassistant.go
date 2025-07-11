@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	BaseURI string = "https://api.openai.com"
+	BaseURI          string = "https://api.openai.com"
 	OpenAIBetaHeader string = "assistants=v2"
-	SilenceErrors int = 1 << 0 // Suppress internal error logging
-	RecallThreadID int = 1 << 1 // Attempt to recall an existing thread ID
+	SilenceErrors    int    = 1 << 0 // Suppress internal error logging
+	RecallThreadID   int    = 1 << 1 // Attempt to recall an existing thread ID
 )
 
 type Assistant struct {
@@ -23,7 +23,7 @@ type Assistant struct {
 	runID         string
 	openAIKey     string
 	assistantID   string
-	threadID      string 
+	threadID      string
 	httpClient    *http.Client
 }
 
